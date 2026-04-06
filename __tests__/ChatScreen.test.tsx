@@ -4,17 +4,22 @@ import ChatScreen from '../screens/ChatScreen';
 import { sendChatMessage } from '../lib/openclaw';
 import * as Speech from 'expo-speech';
 
-jest.mock('../lib/openclaw', () => ({
-  sendChatMessage: jest.fn(),
+jest.mock('../lib/openclaw', () => ({ sendChatMessage: jest.fn() }));
+
+jest.mock('expo-speech', () => ({
+  speak: jest.fn(),
+  stop: jest.fn(),
+  getAvailableVoicesAsync: jest.fn(async () => ([{ identifier: 'voice-1', name: 'Voice One', language: 'en-US' }])),
 }));
 
-const inputBarState: { value?: string; onSend?: () => void; onSpeakLast?: () => void; canSpeak?: boolean } = {};
+const inputBarState: { value?: string; onSend?: () => void; onSpeakLast?: () => void; onStopSpeak?: () => void; canSpeak?: boolean; } = {};
 
 jest.mock('../components/InputBar', () => {
   return function MockInputBar(props: any) {
     inputBarState.value = props.value;
     inputBarState.onSend = props.onSend;
     inputBarState.onSpeakLast = props.onSpeakLast;
+    inputBarState.onStopSpeak = props.onStopSpeak;
     inputBarState.canSpeak = props.canSpeak;
     return null;
   };
@@ -29,11 +34,13 @@ describe('ChatScreen', () => {
   beforeEach(() => {
     mockedSendChatMessage.mockReset();
     mockedSpeech.speak.mockReset();
+    mockedSpeech.stop.mockReset();
   });
 
   it('renders the chat header and wires the speech controls', async () => {
     await act(async () => {
       renderer.create(<ChatScreen route={{ params: { session: { id: 's1', title: 'Test Chat', messages: [] } } }} />);
+      await Promise.resolve();
     });
 
     expect(inputBarState.canSpeak).toBe(true);
@@ -41,15 +48,20 @@ describe('ChatScreen', () => {
     expect(inputBarState.onSpeakLast).toEqual(expect.any(Function));
   });
 
-  it('plays the last assistant message through speech', async () => {
+  it('plays the last assistant message through speech and can stop playback', async () => {
     await act(async () => {
       renderer.create(<ChatScreen route={{ params: { session: { id: 's1', title: 'Test Chat', messages: [] } } }} />);
+      await Promise.resolve();
     });
 
-    expect(inputBarState.canSpeak).toBe(true);
     await act(async () => {
       inputBarState.onSpeakLast?.();
     });
     expect(mockedSpeech.speak).toHaveBeenCalledWith(expect.stringContaining('I\'m live'), expect.objectContaining({ language: 'en-US' }));
+
+    await act(async () => {
+      inputBarState.onStopSpeak?.();
+    });
+    expect(mockedSpeech.stop).toHaveBeenCalled();
   });
 });

@@ -1,8 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { SafeAreaView, View, Text, FlatList, StyleSheet, ActivityIndicator } from 'react-native';
 import * as Speech from 'expo-speech';
 import MessageBubble from '../components/MessageBubble';
-import InputBar from '../components/InputBar';
+import InputBar, { VoiceOption } from '../components/InputBar';
 import { ChatMessage, ChatSession, sendChatMessage } from '../lib/openclaw';
 
 const seedMessages: ChatMessage[] = [
@@ -20,11 +20,48 @@ export default function ChatScreen({ route }: any) {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [typing, setTyping] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [voices, setVoices] = useState<VoiceOption[]>([]);
+  const [selectedVoiceId, setSelectedVoiceId] = useState<string | null>(null);
 
   const lastAssistant = useMemo(() => [...messages].reverse().find(m => m.role === 'assistant'), [messages]);
 
+  useEffect(() => {
+    let mounted = true;
+    Speech.getAvailableVoicesAsync?.().then((available: any[]) => {
+      if (!mounted || !Array.isArray(available)) return;
+      const filtered = available
+        .filter(v => v?.identifier && v?.name)
+        .filter((v, idx, arr) => arr.findIndex(item => item.identifier === v.identifier) === idx)
+        .slice(0, 6)
+        .map(v => ({ identifier: v.identifier, name: v.name, language: v.language }));
+      setVoices(filtered);
+      setSelectedVoiceId(prev => prev || filtered[0]?.identifier || null);
+    });
+    return () => {
+      mounted = false;
+      Speech.stop?.();
+    };
+  }, []);
+
+  const stopSpeaking = () => {
+    Speech.stop?.();
+    setIsSpeaking(false);
+  };
+
   const playLast = () => {
-    if (lastAssistant?.content) Speech.speak(lastAssistant.content, { language: 'en-US', rate: 0.95 });
+    if (!lastAssistant?.content) return;
+    Speech.stop?.();
+    const voice = voices.find(v => v.identifier === selectedVoiceId);
+    Speech.speak(lastAssistant.content, {
+      language: voice?.language || 'en-US',
+      voice: voice?.identifier,
+      rate: 0.95,
+      onDone: () => setIsSpeaking(false),
+      onStopped: () => setIsSpeaking(false),
+      onError: () => setIsSpeaking(false),
+    });
+    setIsSpeaking(true);
   };
 
   const send = async () => {
@@ -57,7 +94,19 @@ export default function ChatScreen({ route }: any) {
         contentContainerStyle={styles.listContent}
       />
       {typing && <View style={styles.typing}><ActivityIndicator size="small" color="#00d4ff" /><Text style={styles.typingText}>AI is typing...</Text></View>}
-      <InputBar value={input} onChangeText={setInput} onSend={send} onSpeakLast={playLast} isSending={sending} canSpeak={!!lastAssistant} />
+      <InputBar
+        value={input}
+        onChangeText={setInput}
+        onSend={send}
+        onSpeakLast={playLast}
+        onStopSpeak={stopSpeaking}
+        isSending={sending}
+        canSpeak={!!lastAssistant}
+        isSpeaking={isSpeaking}
+        voices={voices}
+        selectedVoiceId={selectedVoiceId}
+        onSelectVoice={setSelectedVoiceId}
+      />
     </SafeAreaView>
   );
 }
