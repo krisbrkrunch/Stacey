@@ -1,134 +1,72 @@
-import React, { useState } from 'react';
-import {
-  SafeAreaView,
-  View,
-  Text,
-  FlatList,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-} from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { SafeAreaView, View, Text, FlatList, StyleSheet, ActivityIndicator } from 'react-native';
+import * as Speech from 'expo-speech';
+import MessageBubble from '../components/MessageBubble';
+import InputBar from '../components/InputBar';
+import { ChatMessage, ChatSession, sendChatMessage } from '../lib/openclaw';
 
-interface Message {
-  id: string;
-  text: string;
-  isUser: boolean;
-}
+const seedMessages: ChatMessage[] = [
+  {
+    id: 'welcome',
+    role: 'assistant',
+    content: 'I\'m live. Try **markdown**, lists, and links like [OpenClaw](https://docs.openclaw.ai).',
+    createdAt: new Date(Date.now() - 1000 * 60 * 10).toISOString(),
+  },
+];
 
-const ChatScreen = () => {
-  const [messages, setMessages] = useState<Message[]>([]);
+export default function ChatScreen({ route }: any) {
+  const session: ChatSession | undefined = route?.params?.session;
+  const [messages, setMessages] = useState<ChatMessage[]>(session?.messages?.length ? session.messages : seedMessages);
   const [input, setInput] = useState('');
+  const [sending, setSending] = useState(false);
+  const [typing, setTyping] = useState(false);
 
-  const sendMessage = () => {
-    if (input.trim()) {
-      const userMsg: Message = { id: Date.now().toString(), text: input, isUser: true };
-      setMessages(prev => [...prev, userMsg]);
-      setInput('');
+  const lastAssistant = useMemo(() => [...messages].reverse().find(m => m.role === 'assistant'), [messages]);
 
-      // Mock AI response
-      setTimeout(() => {
-        const aiMsg: Message = { id: (Date.now() + 1).toString(), text: 'This is a mock response from the AI.', isUser: false };
-        setMessages(prev => [...prev, aiMsg]);
-      }, 500);
+  const playLast = () => {
+    if (lastAssistant?.content) Speech.speak(lastAssistant.content, { language: 'en-US', rate: 0.95 });
+  };
+
+  const send = async () => {
+    const trimmed = input.trim();
+    if (!trimmed || sending) return;
+    const userMsg: ChatMessage = { id: `${Date.now()}`, role: 'user', content: trimmed, createdAt: new Date().toISOString() };
+    setMessages(prev => [...prev, userMsg]);
+    setInput('');
+    setSending(true);
+    setTyping(true);
+    try {
+      const { reply } = await sendChatMessage({ sessionId: session?.id, message: trimmed });
+      const aiMsg: ChatMessage = { id: `${Date.now() + 1}`, role: 'assistant', content: reply, createdAt: new Date().toISOString() };
+      setMessages(prev => [...prev, aiMsg]);
+    } catch (e: any) {
+      setMessages(prev => [...prev, { id: `${Date.now() + 2}`, role: 'assistant', content: `Gateway unavailable, so I used a local fallback.\n\n${e?.message || 'Unknown error'}`, createdAt: new Date().toISOString() }]);
+    } finally {
+      setTyping(false);
+      setSending(false);
     }
   };
 
-  const renderMessage = ({ item }: { item: Message }) => (
-    <View style={[styles.message, item.isUser ? styles.userMessage : styles.aiMessage]}>
-      <Text style={styles.text}>{item.text}</Text>
-    </View>
-  );
-
   return (
     <SafeAreaView style={styles.container}>
+      <View style={styles.header}><Text style={styles.headerTitle}>{session?.title || 'Chat'}</Text></View>
       <FlatList
         data={messages}
-        renderItem={renderMessage}
-        keyExtractor={item => item.id}
-        style={styles.list}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => <MessageBubble message={item} />}
         contentContainerStyle={styles.listContent}
       />
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          value={input}
-          onChangeText={setInput}
-          placeholder="Type a message..."
-          placeholderTextColor="#aaa"
-          multiline
-        />
-        <TouchableOpacity style={styles.sendButton} onPress={sendMessage} disabled={!input.trim()}>
-          <Text style={styles.sendText}>Send</Text>
-        </TouchableOpacity>
-      </View>
+      {typing && <View style={styles.typing}><ActivityIndicator size="small" color="#00d4ff" /><Text style={styles.typingText}>AI is typing...</Text></View>}
+      <InputBar value={input} onChangeText={setInput} onSend={send} onSpeakLast={playLast} isSending={sending} canSpeak={!!lastAssistant} />
     </SafeAreaView>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000000',
-  },
-  list: {
-    flex: 1,
-  },
-  listContent: {
-    padding: 10,
-  },
-  message: {
-    padding: 12,
-    marginVertical: 4,
-    marginHorizontal: 8,
-    borderRadius: 20,
-    maxWidth: '75%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.22,
-    shadowRadius: 2.22,
-    elevation: 3,
-  },
-  userMessage: {
-    alignSelf: 'flex-end',
-    backgroundColor: '#007AFF',
-  },
-  aiMessage: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#343541',
-  },
-  text: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    lineHeight: 20,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    padding: 12,
-    backgroundColor: '#000000',
-  },
-  input: {
-    flex: 1,
-    backgroundColor: '#343541',
-    color: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 24,
-    fontSize: 16,
-    maxHeight: 120,
-    marginRight: 8,
-  },
-  sendButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 24,
-    justifyContent: 'center',
-  },
-  sendText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  header: { paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#222' },
+  headerTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  listContent: { padding: 16, paddingBottom: 8 },
+  typing: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
+  typingText: { color: '#b0b0b0' },
 });
-
-export default ChatScreen;
