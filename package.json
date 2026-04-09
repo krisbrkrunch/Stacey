@@ -36,7 +36,9 @@
     "typescript": "~5.9.2"
   },
   "jest": {
-    "preset": "jest-expo"
+    "preset": "jest-expo",
+    "testTimeout": 30000,
+    "testTimeout": 30000
   },
   "private": true
 }

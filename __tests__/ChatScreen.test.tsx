@@ -30,7 +30,18 @@ jest.mock('../components/MarkdownMessage', () => ({ content }: { content: string
 const mockedSendChatMessage = sendChatMessage as jest.MockedFunction<typeof sendChatMessage>;
 const mockedSpeech = Speech as jest.Mocked<typeof Speech>;
 
+// Suppress act warnings in test renderer
+const origConsoleError = console.error;
+console.error = jest.fn();
+
 describe('ChatScreen', () => {
+  beforeAll(() => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterAll(() => {
+    (console.error as jest.Mock).mockRestore();
+  });
   beforeEach(() => {
     mockedSendChatMessage.mockReset();
     mockedSpeech.speak.mockReset();
